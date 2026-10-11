@@ -10,6 +10,7 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h"
 #include "intrinsic.h"
 #ifdef USERPROG
 #include "userprog/process.h"
@@ -65,6 +66,7 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
+static void thread_sleep (int64_t wakeup_tick);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -112,6 +114,7 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&sleep_list);
+	timer_on_sleep (thread_sleep);
 	list_init (&destruction_req);
 
 	/* Set up a thread structure for the running thread. */
@@ -265,7 +268,7 @@ wakeup_tick_less (const struct list_elem *a, const struct list_elem *b,
    sleep_list에 wakeup_tick 오름차순으로 넣고 block한다.
    깨우는 쪽은 thread_wakeup()이다. sleep_list를 타이머 인터럽트와
    함께 쓰므로, 삽입부터 block까지 인터럽트를 끈 채로 진행한다. */
-void
+static void
 thread_sleep (int64_t wakeup_tick) {
 	struct thread *curr = thread_current ();
 	enum intr_level old_level;

@@ -24,6 +24,9 @@ static int64_t ticks;
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
 
+/* timer_on_sleep()으로 등록된, 실제로 재우는 함수. 등록 전에는 NULL. */
+static void (*sleep_callback) (int64_t);
+
 static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
@@ -87,6 +90,15 @@ timer_elapsed (int64_t then) {
 	return timer_ticks () - then;
 }
 
+/* timer_sleep()이 실제로 재울 때 부를 함수 CALLBACK을 등록한다.
+   thread_init()에서 한 번만 호출한다.
+   CALLBACK은 기상 틱(몇 번째 틱에 깰지, 절대값)을 인자로 받는다. */
+void
+timer_on_sleep (void (*callback)(int64_t)) {
+	ASSERT (callback != NULL);
+	ASSERT (sleep_callback == NULL);
+	sleep_callback = callback;
+}
 /* Suspends execution for approximately TICKS timer ticks. */
 void
 timer_sleep (int64_t ticks) {
@@ -94,7 +106,8 @@ timer_sleep (int64_t ticks) {
 		return;
 
 	ASSERT (intr_get_level () == INTR_ON);
-	thread_sleep (timer_ticks () + ticks);
+	ASSERT (sleep_callback != NULL);
+	sleep_callback (timer_ticks () + ticks);
 }
 
 /* Suspends execution for approximately MS milliseconds. */
