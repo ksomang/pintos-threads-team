@@ -27,6 +27,9 @@ static unsigned loops_per_tick;
 /* timer_on_sleep()으로 등록된, 실제로 재우는 함수. 등록 전에는 NULL. */
 static void (*sleep_callback) (int64_t);
 
+/* timer_on_wakeup()으로 등록된, 깰 스레드를 깨우는 함수. 등록 전에는 NULL. */
+static void (*wakeup_callback) (int64_t);
+
 static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
@@ -99,6 +102,17 @@ timer_on_sleep (void (*callback)(int64_t)) {
 	ASSERT (sleep_callback == NULL);
 	sleep_callback = callback;
 }
+
+/* 타이머 인터럽트가 매 틱 부를, 깰 스레드를 깨우는 함수 CALLBACK을 등록한다.
+   thread_init()에서 한 번만 호출한다.
+   CALLBACK은 확인하는 순간의 틱(ticks++ 직후의 전역 시계)을 인자로 받는다. */
+void
+timer_on_wakeup (void (*callback)(int64_t)) {
+	ASSERT (callback != NULL);
+	ASSERT (wakeup_callback == NULL);
+	wakeup_callback = callback;
+}
+
 /* Suspends execution for approximately TICKS timer ticks. */
 void
 timer_sleep (int64_t ticks) {
@@ -138,7 +152,8 @@ timer_print_stats (void) {
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
-	thread_wakeup (ticks);
+	ASSERT (wakeup_callback != NULL);
+	wakeup_callback (ticks);
 	thread_tick ();
 }
 

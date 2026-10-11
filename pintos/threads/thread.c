@@ -67,6 +67,7 @@ static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
 static void thread_sleep (int64_t wakeup_tick);
+static void thread_wakeup (int64_t current_tick);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -115,6 +116,7 @@ thread_init (void) {
 	list_init (&ready_list);
 	list_init (&sleep_list);
 	timer_on_sleep (thread_sleep);
+	timer_on_wakeup (thread_wakeup);
 	list_init (&destruction_req);
 
 	/* Set up a thread structure for the running thread. */
@@ -285,7 +287,7 @@ thread_sleep (int64_t wakeup_tick) {
    sleep_list 앞에서부터 wakeup_tick <= CURRENT_TICK인 스레드를 꺼내 unblock한다.
    리스트가 오름차순이라 아직 깰 때가 아닌 스레드를 만나면 멈춘다.
    elem을 ready_list에서 재사용하므로 반드시 리스트에서 뺀 뒤 unblock한다. */
-void
+static void
 thread_wakeup (int64_t current_tick) {
 	while (!list_empty (&sleep_list)) {
 		struct thread *t =

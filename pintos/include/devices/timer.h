@@ -17,6 +17,11 @@ int64_t timer_elapsed (int64_t);
    thread_init()에서 한 번만 호출한다.
    CALLBACK은 기상 틱(몇 번째 틱에 깰지, 절대값)을 인자로 받는다. */
 void timer_on_sleep (void (*callback)(int64_t));
+
+/* 타이머 인터럽트가 매 틱 부를, 깰 스레드를 깨우는 함수 CALLBACK을 등록한다.
+   thread_init()에서 한 번만 호출한다.
+   CALLBACK은 확인하는 순간의 틱(ticks++ 직후의 전역 시계)을 인자로 받는다. */
+void timer_on_wakeup (void (*callback)(int64_t));
 void timer_sleep (int64_t ticks);
 void timer_msleep (int64_t milliseconds);
 void timer_usleep (int64_t microseconds);
