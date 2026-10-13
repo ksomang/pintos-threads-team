@@ -407,6 +407,27 @@ thread_yield_to_higher (void) {
 	intr_set_level (old_level);
 }
 
+void
+thread_donate_priority (void) {
+	struct thread *t = thread_current ();
+	int depth = 0;
+
+	while (depth < 8) {
+		if (t->waiting_lock == NULL)
+			break;
+
+		struct thread *holder = t->waiting_lock->holder;
+
+		if (holder == NULL || holder->priority >= t->priority)
+			break;
+		
+		holder->priority = t->priority;
+
+		t = holder;
+		depth++;
+	}
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
