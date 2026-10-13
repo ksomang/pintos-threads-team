@@ -9,6 +9,7 @@
 #include "vm/vm.h"
 #endif
 
+struct lock;
 
 /* States in a thread's life cycle. */
 enum thread_status {
@@ -91,6 +92,11 @@ struct thread {
 	enum thread_status status;          /* Thread state. */
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
+
+	int base_priority;					/* 원래 우선순위 */
+	struct lock *waiting_lock;			/* 이 스레드가 지금 기다리는 lock. */
+	struct list donations;				/* 이 스레드에게 기부한 스레드 목록. */
+	struct list_elem donation_elem;		/* 이 스레드가 다른 스레드의 기부 목록에 들어갈 때 쓰는 elem. */
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
