@@ -66,6 +66,8 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
+static int get_max_donation();
+static bool lock_priority_less (const struct list_elem *a_, const struct list_elem *b_, void *max_p_);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -82,6 +84,8 @@ static tid_t allocate_tid (void);
 // Because the gdt will be setup after the thread_init, we should
 // setup temporal gdt first.
 static uint64_t gdt[3] = { 0, 0x00af9a000000ffff, 0x00cf92000000ffff };
+
+
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -390,17 +394,22 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-  //TODO : base_priority 변경, priority 수정은 조건에 따라
+  struct thread *t = thread_current();
+  int prev_base = t->base_priority;
+  t->base_priority = new_priority;
+  if (t->priority > prev_base && t->priority >= new_priority) return;
+  
+
   enum intr_level old_level;
   old_level = intr_disable ();
 
-  thread_current ()->priority = new_priority;
+  t->priority = get_max_donation();
 
   if (!list_empty(&ready_list)){
     bool result_less = true;
     struct thread *max = list_entry(list_max(&ready_list, thread_priority_comp, &result_less), struct thread, elem);
     
-    if (max->priority > new_priority){
+    if (max->priority > t->priority){
       if (intr_context()) intr_yield_on_return();
       else thread_yield();
     }
@@ -421,7 +430,29 @@ thread_donate_priority(struct thread *t, int priority){
   if (t->priority >= priority) return;
 
   t->priority = priority;
-  if (t->waiting_lock != NULL) thread_donate_priority(t->waiting_lock->holder, priority);
+  
+  if (t->waiting_lock != NULL && t->waiting_lock->holder != NULL){
+    thread_donate_priority(t->waiting_lock->holder, priority);
+  }
+
+  if (t->status == THREAD_READY){
+    bool result_less = false;
+    list_remove(&t->elem);
+    list_insert_ordered(&ready_list, &t->elem, thread_priority_comp, &result_less);
+  }
+}
+
+void
+thread_recover_priority(int priority){
+  struct thread *t = thread_current();
+  if (t->priority != priority) return;
+
+  enum intr_level old_level;
+  old_level = intr_disable();
+
+  t->priority = get_max_donation();
+
+  intr_set_level(old_level);
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -511,9 +542,11 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->status = THREAD_BLOCKED;
 	strlcpy (t->name, name, sizeof t->name);
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
-	t->priority = priority;
-  t->base_priority = priority;
 	t->magic = THREAD_MAGIC;
+  t->priority = priority;
+  t->base_priority = priority;
+  t->waiting_lock = NULL;
+  list_init(&t->aquired_locks);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -695,6 +728,29 @@ allocate_tid (void) {
 	return tid;
 }
 
+static int
+get_max_donation(){
+  struct thread *t = thread_current();
+  int ret;
+
+  if (!list_empty(&t->aquired_locks)) {
+    struct thread *max_t = NULL;
+    struct lock *max_l = list_entry(list_max(&t->aquired_locks, lock_priority_less, &max_t), struct lock, elem);
+
+    if (!list_empty(&max_l->semaphore.waiters) && !max_t) {
+      bool result_less = true;
+      max_t = list_entry(list_max(&max_l->semaphore.waiters, thread_priority_comp, &result_less), struct thread, elem);
+    }
+
+    ret = (!max_t || t->base_priority > max_t->priority) ? t->base_priority : max_t->priority;
+  }
+  else{
+    ret = t->base_priority;
+  }
+
+  return ret;
+}
+
 
 bool
 thread_priority_comp (const struct list_elem *a_, const struct list_elem *b_, void *result_less){
@@ -703,4 +759,34 @@ thread_priority_comp (const struct list_elem *a_, const struct list_elem *b_, vo
   const struct thread *b = list_entry (b_, struct thread, elem);
 
   return *(const bool *)result_less ? a->priority < b->priority : a->priority > b->priority;
+}
+
+static bool
+lock_priority_less (const struct list_elem *a_, const struct list_elem *b_, void *max_p_){
+  const struct lock *a = list_entry (a_, struct lock, elem);
+  const struct lock *b = list_entry (b_, struct lock, elem);
+
+  bool t_a_exist = !list_empty(&a->semaphore.waiters);
+  bool t_b_exist = !list_empty(&b->semaphore.waiters);
+
+  const struct thread *t_a;
+  const struct thread *t_b;
+
+  bool result_less = true;
+  if (t_a_exist) t_a = list_entry(list_max(&a->semaphore.waiters, thread_priority_comp, &result_less), struct thread, elem);
+  if (t_b_exist) t_b = list_entry(list_max(&b->semaphore.waiters, thread_priority_comp, &result_less), struct thread, elem);
+
+  if (!t_b_exist){
+    if (t_a_exist) *(struct thread **)max_p_ = t_a;
+    return false;
+  }
+
+  if (!t_a_exist){
+    if (t_b_exist) *(struct thread **)max_p_ = t_b;
+    return true;
+  }
+
+  if (t_a->priority < t_b->priority) *(struct thread **)max_p_ = t_b;
+  else if (*(struct thread **)max_p_ == NULL) *(struct thread **)max_p_ = t_a;
+  return t_a->priority < t_b->priority;
 }

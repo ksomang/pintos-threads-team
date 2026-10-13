@@ -69,7 +69,12 @@ sema_down (struct semaphore *sema) {
 
 	old_level = intr_disable ();
 	while (sema->value == 0) {
-		list_push_back (&sema->waiters, &thread_current ()->elem);
+    struct thread *t = thread_current();
+    struct lock *lock = t->waiting_lock;
+    if (lock && &lock->semaphore == sema) 
+      thread_donate_priority(lock->holder, t->priority);
+
+		list_push_back (&sema->waiters, &t->elem);
 		thread_block ();
 	}
 	sema->value--;
@@ -202,8 +207,19 @@ lock_acquire (struct lock *lock) {
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
 
-	sema_down (&lock->semaphore);
-	lock->holder = thread_current ();
+  enum intr_level old_level;
+
+  old_level = intr_disable();
+  if (!sema_try_down(&lock->semaphore)){
+    thread_current ()->waiting_lock = lock;
+
+    sema_down (&lock->semaphore);
+    thread_current ()->waiting_lock = NULL;
+  }
+
+  lock->holder = thread_current ();
+  list_push_back(&thread_current()->aquired_locks, &lock->elem);
+  intr_set_level(old_level);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -219,9 +235,17 @@ lock_try_acquire (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (!lock_held_by_current_thread (lock));
 
+  enum intr_level old_level;
+  old_level = intr_disable();
+
 	success = sema_try_down (&lock->semaphore);
-	if (success)
-		lock->holder = thread_current ();
+	if (success){
+    lock->holder = thread_current ();
+    list_push_back(&thread_current()->aquired_locks, &lock->elem);
+  }
+
+	intr_set_level(old_level);
+  
 	return success;
 }
 
@@ -236,8 +260,20 @@ lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
 
+  enum intr_level old_level;
+  old_level = intr_disable();
+
 	lock->holder = NULL;
+  list_remove(&lock->elem);
+  
+  if (!list_empty(&lock->semaphore.waiters)){
+    bool result_less = true;
+    struct thread *max = list_entry(list_max(&lock->semaphore.waiters, thread_priority_comp, &result_less), struct thread, elem);
+    thread_recover_priority(max->priority);
+  }
+
 	sema_up (&lock->semaphore);
+  intr_set_level(old_level);
 }
 
 /* Returns true if the current thread holds LOCK, false
