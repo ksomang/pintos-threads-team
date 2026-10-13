@@ -255,7 +255,7 @@ thread_unblock (struct thread *t) {
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
   bool result_less = false;
-  list_insert_ordered (&ready_list, &t->elem, priority_comp, &result_less);
+  list_insert_ordered (&ready_list, &t->elem, thread_priority_comp, &result_less);
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -315,7 +315,7 @@ thread_wakeup (int64_t current_tick) {
 
   if (!list_empty(&ready_list)){
     bool result_less = true;
-    struct thread *max = list_entry(list_max(&ready_list, priority_comp, &result_less), struct thread, elem);
+    struct thread *max = list_entry(list_max(&ready_list, thread_priority_comp, &result_less), struct thread, elem);
     if (max->priority > thread_current()->priority) 
       intr_yield_on_return();
   }
@@ -381,7 +381,7 @@ thread_yield (void) {
 	old_level = intr_disable ();
 	if (curr != idle_thread){
     bool result_less = false;
-    list_insert_ordered (&ready_list, &curr->elem, priority_comp, &result_less);
+    list_insert_ordered (&ready_list, &curr->elem, thread_priority_comp, &result_less);
   }
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
@@ -398,7 +398,7 @@ thread_set_priority (int new_priority) {
 
   if (!list_empty(&ready_list)){
     bool result_less = true;
-    struct thread *max = list_entry(list_max(&ready_list, priority_comp, &result_less), struct thread, elem);
+    struct thread *max = list_entry(list_max(&ready_list, thread_priority_comp, &result_less), struct thread, elem);
     
     if (max->priority > new_priority){
       if (intr_context()) intr_yield_on_return();
@@ -673,7 +673,7 @@ schedule (void) {
 		if (curr && curr->status == THREAD_DYING && curr != initial_thread) {
 			ASSERT (curr != next);
       bool result_less = false;
-			list_insert_ordered (&destruction_req, &curr->elem, priority_comp, &result_less);
+			list_insert_ordered (&destruction_req, &curr->elem, thread_priority_comp, &result_less);
 		}
 
 		/* Before switching the thread, we first save the information
@@ -697,7 +697,7 @@ allocate_tid (void) {
 
 
 bool
-priority_comp (const struct list_elem *a_, const struct list_elem *b_, void *result_less){
+thread_priority_comp (const struct list_elem *a_, const struct list_elem *b_, void *result_less){
   ASSERT(result_less);
   const struct thread *a = list_entry (a_, struct thread, elem);
   const struct thread *b = list_entry (b_, struct thread, elem);
