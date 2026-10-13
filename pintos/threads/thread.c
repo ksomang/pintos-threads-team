@@ -275,6 +275,49 @@ priority_less (const struct list_elem *a, const struct list_elem *b,
 	return ta->priority < tb->priority;
 }
 
+/* donations 목록 안의 두 스레드 우선순위를 비교한다. */
+static bool
+donation_priority_less (const struct list_elem *a, const struct list_elem *b,
+		void *aux UNUSED) {
+	struct thread *ta = list_entry (a, struct thread, donation_elem);
+	struct thread *tb = list_entry (b, struct thread, donation_elem);
+
+	return ta->priority < tb->priority;
+}
+
+/* 지금 스레드의 donations를 처음부터 끝까지 돌면서
+   waiting_lock이 lock인 스레드만 목록에서 뺀다. */
+void
+thread_remove_donations (struct lock *lock) {
+	struct thread *curr = thread_current ();
+	struct list_elem *e = list_begin (&curr->donations);
+
+	while (e != list_end (&curr->donations)) {
+		struct thread *t = list_entry (e, struct thread, donation_elem);
+
+		if (t->waiting_lock == lock)
+			e = list_remove (e);
+		else
+			e = list_next (e);
+	}
+}
+
+/* 지금 스레드의 우선순위를 남은 donation 중 가장 높은 것 = 원래 우선순위로 다시 계산한다. */
+void
+thread_refresh_priority (void) {
+	struct thread *curr = thread_current ();
+
+	curr->priority = curr->base_priority;
+
+	if (!list_empty (&curr->donations)) {
+		struct list_elem *high_elem = list_max (&curr->donations, donation_priority_less, NULL);
+		struct thread *high = list_entry (high_elem, struct thread, donation_elem);
+
+		if (high->priority > curr->priority)
+			curr->priority = high->priority;
+	}
+}
+
 /* 현재 스레드를 WAKEUP_TICK까지 재운다.
    sleep_list에 wakeup_tick 오름차순으로 넣고 block한다.
    깨우는 쪽은 thread_wakeup()이다. sleep_list를 타이머 인터럽트와
@@ -428,10 +471,11 @@ thread_donate_priority (void) {
 	}
 }
 
-/* Sets the current thread's priority to NEW_PRIORITY. */
+/* 지금 실행 중인 스레드가 자기 우선순위를 바꾸고 싶을 때 부르는 함수. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
+	thread_current ()->base_priority = new_priority;
+	thread_refresh_priority ();
 	thread_yield_to_higher ();
 }
 

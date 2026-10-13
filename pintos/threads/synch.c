@@ -229,19 +229,24 @@ lock_try_acquire (struct lock *lock) {
 	return success;
 }
 
-/* Releases LOCK, which must be owned by the current thread.
-   This is lock_release function.
-
-   An interrupt handler cannot acquire a lock, so it does not
-   make sense to try to release a lock within an interrupt
-   handler. */
+/* 내가 쥐고 있던 lock을 놓고 그 lock을 기다리고 있던 스레드를 깨운다.
+   lock_acquire(lock 잡기)의 짝 함수. */
 void
 lock_release (struct lock *lock) {
+	enum intr_level old_level;
+
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
 
+	old_level = intr_disable ();
+	
+	thread_remove_donations (lock);
+	thread_refresh_priority ();
+
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
+
+	intr_set_level (old_level);
 }
 
 /* Returns true if the current thread holds LOCK, false

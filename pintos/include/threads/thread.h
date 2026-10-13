@@ -145,6 +145,8 @@ int thread_get_priority (void);
 void thread_set_priority (int);
 bool priority_less (const struct list_elem *a, const struct list_elem *b, void *aux);
 void thread_donate_priority (void);
+void thread_remove_donations (struct lock *lock);
+void thread_refresh_priority (void);
 
 int thread_get_nice (void);
 void thread_set_nice (int);
