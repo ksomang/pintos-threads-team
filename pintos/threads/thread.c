@@ -67,7 +67,6 @@ static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
 static int get_max_donation();
-static bool lock_priority_less (const struct list_elem *a_, const struct list_elem *b_, void *max_p_);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -319,11 +318,10 @@ thread_wakeup (int64_t current_tick) {
 
   if (!list_empty(&ready_list)){
     bool result_less = true;
-    struct thread *max = list_entry(list_max(&ready_list, thread_priority_comp, &result_less), struct thread, elem);
+    struct thread *max = list_entry(list_front(&ready_list), struct thread, elem);
     if (max->priority > thread_current()->priority) 
       intr_yield_on_return();
   }
-  
 }
 
 /* Returns the name of the running thread. */
@@ -407,7 +405,7 @@ thread_set_priority (int new_priority) {
 
   if (!list_empty(&ready_list)){
     bool result_less = true;
-    struct thread *max = list_entry(list_max(&ready_list, thread_priority_comp, &result_less), struct thread, elem);
+    struct thread *max = list_entry(list_front(&ready_list), struct thread, elem);
     
     if (max->priority > t->priority){
       if (intr_context()) intr_yield_on_return();
@@ -706,7 +704,7 @@ schedule (void) {
 		if (curr && curr->status == THREAD_DYING && curr != initial_thread) {
 			ASSERT (curr != next);
       bool result_less = false;
-			list_insert_ordered (&destruction_req, &curr->elem, thread_priority_comp, &result_less);
+			list_push_back (&destruction_req, &curr->elem);
 		}
 
 		/* Before switching the thread, we first save the information
@@ -731,21 +729,20 @@ allocate_tid (void) {
 static int
 get_max_donation(){
   struct thread *t = thread_current();
-  int ret;
+  struct list_elem *cur = list_begin(&t->aquired_locks);
+  int ret = t->base_priority;
 
-  if (!list_empty(&t->aquired_locks)) {
-    struct thread *max_t = NULL;
-    struct lock *max_l = list_entry(list_max(&t->aquired_locks, lock_priority_less, &max_t), struct lock, elem);
+  bool result_less = true;
+  while(cur != list_end(&t->aquired_locks)){
+    struct lock *lock = list_entry(cur, struct lock, elem);
 
-    if (!list_empty(&max_l->semaphore.waiters) && !max_t) {
-      bool result_less = true;
-      max_t = list_entry(list_max(&max_l->semaphore.waiters, thread_priority_comp, &result_less), struct thread, elem);
+    if (!list_empty(&lock->semaphore.waiters)){
+      struct thread *max = list_entry(list_max(&lock->semaphore.waiters, thread_priority_comp, &result_less), struct thread, elem);
+      
+      if (max->priority > ret) ret = max->priority;
     }
-
-    ret = (!max_t || t->base_priority > max_t->priority) ? t->base_priority : max_t->priority;
-  }
-  else{
-    ret = t->base_priority;
+    
+    cur = list_next(cur);
   }
 
   return ret;
@@ -759,34 +756,4 @@ thread_priority_comp (const struct list_elem *a_, const struct list_elem *b_, vo
   const struct thread *b = list_entry (b_, struct thread, elem);
 
   return *(const bool *)result_less ? a->priority < b->priority : a->priority > b->priority;
-}
-
-static bool
-lock_priority_less (const struct list_elem *a_, const struct list_elem *b_, void *max_p_){
-  const struct lock *a = list_entry (a_, struct lock, elem);
-  const struct lock *b = list_entry (b_, struct lock, elem);
-
-  bool t_a_exist = !list_empty(&a->semaphore.waiters);
-  bool t_b_exist = !list_empty(&b->semaphore.waiters);
-
-  const struct thread *t_a;
-  const struct thread *t_b;
-
-  bool result_less = true;
-  if (t_a_exist) t_a = list_entry(list_max(&a->semaphore.waiters, thread_priority_comp, &result_less), struct thread, elem);
-  if (t_b_exist) t_b = list_entry(list_max(&b->semaphore.waiters, thread_priority_comp, &result_less), struct thread, elem);
-
-  if (!t_b_exist){
-    if (t_a_exist) *(struct thread **)max_p_ = t_a;
-    return false;
-  }
-
-  if (!t_a_exist){
-    if (t_b_exist) *(struct thread **)max_p_ = t_b;
-    return true;
-  }
-
-  if (t_a->priority < t_b->priority) *(struct thread **)max_p_ = t_b;
-  else if (*(struct thread **)max_p_ == NULL) *(struct thread **)max_p_ = t_a;
-  return t_a->priority < t_b->priority;
 }

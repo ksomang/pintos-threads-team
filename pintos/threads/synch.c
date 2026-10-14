@@ -210,12 +210,10 @@ lock_acquire (struct lock *lock) {
   enum intr_level old_level;
 
   old_level = intr_disable();
-  if (!sema_try_down(&lock->semaphore)){
-    thread_current ()->waiting_lock = lock;
+  thread_current ()->waiting_lock = lock;
 
-    sema_down (&lock->semaphore);
-    thread_current ()->waiting_lock = NULL;
-  }
+  sema_down (&lock->semaphore);
+  thread_current ()->waiting_lock = NULL;
 
   lock->holder = thread_current ();
   list_push_back(&thread_current()->aquired_locks, &lock->elem);
