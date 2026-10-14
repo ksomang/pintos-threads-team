@@ -66,7 +66,7 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
-static int get_max_donation();
+static int get_max_donation(void);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -323,7 +323,6 @@ thread_wakeup (int64_t current_tick) {
 	}
 
   if (!list_empty(&ready_list)){
-    bool result_less = true;
     struct thread *max = list_entry(list_front(&ready_list), struct thread, elem);
     /* timer interrupt 처리 중에는 직접 컨텍스트 스위치를 수행하지 않고,
       인터럽트 핸들러가 반환될 때 선점하도록 예약한다. */
@@ -416,7 +415,6 @@ thread_set_priority (int new_priority) {
   t->priority = get_max_donation();
 
   if (!list_empty(&ready_list)){
-    bool result_less = true;
     struct thread *max = list_entry(list_front(&ready_list), struct thread, elem);
     
     if (max->priority > t->priority){
@@ -753,7 +751,7 @@ allocate_tid (void) {
    lock을 여러 개 보유할 수 있으므로 하나의 lock만 기준으로
    우선순위를 복구하면 안 된다. */
 static int
-get_max_donation(){
+get_max_donation(void){
   struct thread *t = thread_current();
   struct list_elem *cur = list_begin(&t->aquired_locks);
   int ret = t->base_priority;
