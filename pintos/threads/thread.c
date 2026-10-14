@@ -217,6 +217,9 @@ thread_create (const char *name, int priority,
 	/* Add to run queue. */
 	thread_unblock (t);
 
+  /* 새 스레드의 우선순위가 현재 스레드보다 높으면 즉시 CPU를 양보한다.
+   인터럽트 핸들러에서는 현재 인터럽트가 끝난 뒤 선점하고,
+   일반 실행 문맥에서는 직접 thread_yield()를 호출한다. */
   if (t->priority > thread_current()->priority){
     if (intr_context()) intr_yield_on_return();
     else thread_yield();
@@ -257,9 +260,12 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
+
+  //ready_list는 항상 우선순위가 높은 스레드가 앞에 오도록 유지
   bool result_less = false;
   list_insert_ordered (&ready_list, &t->elem, thread_priority_comp, &result_less);
 	t->status = THREAD_READY;
+
 	intr_set_level (old_level);
 }
 
@@ -319,6 +325,8 @@ thread_wakeup (int64_t current_tick) {
   if (!list_empty(&ready_list)){
     bool result_less = true;
     struct thread *max = list_entry(list_front(&ready_list), struct thread, elem);
+    /* timer interrupt 처리 중에는 직접 컨텍스트 스위치를 수행하지 않고,
+      인터럽트 핸들러가 반환될 때 선점하도록 예약한다. */
     if (max->priority > thread_current()->priority) 
       intr_yield_on_return();
   }
@@ -382,6 +390,7 @@ thread_yield (void) {
 
 	old_level = intr_disable ();
 	if (curr != idle_thread){
+    //ready_list는 항상 우선순위가 높은 스레드가 앞에 오도록 유지
     bool result_less = false;
     list_insert_ordered (&ready_list, &curr->elem, thread_priority_comp, &result_less);
   }
@@ -389,7 +398,10 @@ thread_yield (void) {
 	intr_set_level (old_level);
 }
 
-/* Sets the current thread's priority to NEW_PRIORITY. */
+/* base_priority는 thread_set_priority()로 설정한 원래 우선순위이고,
+   priority는 현재 donation까지 반영된 유효 우선순위다.
+   우선순위를 변경해도 보유 중인 lock으로부터 받은 donation은
+   유지되어야 하므로, 현재 우선순위를 직접 new_priority로 덮어쓰지 않는다. */
 void
 thread_set_priority (int new_priority) {
   struct thread *t = thread_current();
@@ -430,10 +442,16 @@ thread_donate_priority(struct thread *t, int priority){
   t->priority = priority;
   
   if (t->waiting_lock != NULL && t->waiting_lock->holder != NULL){
+    /* 현재 스레드가 lock을 기다리고 있다면, 이 스레드의 우선순위가
+      해당 lock의 holder에게도 전달되어야 한다.
+      holder 역시 다른 lock을 기다리는 중일 수 있으므로,
+      waiting_lock을 따라 donation을 재귀적으로 전파한다. */
     thread_donate_priority(t->waiting_lock->holder, priority);
   }
 
   if (t->status == THREAD_READY){
+    /* ready_list에 들어간 스레드의 우선순위가 변경되었으므로,
+      기존 위치를 제거한 뒤 새 우선순위에 맞는 위치에 다시 삽입한다. */
     bool result_less = false;
     list_remove(&t->elem);
     list_insert_ordered(&ready_list, &t->elem, thread_priority_comp, &result_less);
@@ -448,6 +466,10 @@ thread_recover_priority(int priority){
   enum intr_level old_level;
   old_level = intr_disable();
 
+  /* lock을 해제한 뒤에도 다른 보유 lock에 의해 donation이 남아 있을 수 있다.
+   따라서 donation을 모두 제거하지 않고,
+   base_priority와 현재 보유 lock들의 대기 스레드 우선순위 중
+   가장 높은 값을 다시 계산한다. */
   t->priority = get_max_donation();
 
   intr_set_level(old_level);
@@ -726,6 +748,10 @@ allocate_tid (void) {
 	return tid;
 }
 
+/* 각 lock의 waiter 중 가장 높은 우선순위를 확인해
+   현재 스레드가 받아야 할 최대 donation을 계산한다.
+   lock을 여러 개 보유할 수 있으므로 하나의 lock만 기준으로
+   우선순위를 복구하면 안 된다. */
 static int
 get_max_donation(){
   struct thread *t = thread_current();
@@ -748,7 +774,10 @@ get_max_donation(){
   return ret;
 }
 
-
+/* 동일한 비교 함수를 ready_list 삽입과 list_max()에 함께 사용하기 위해
+   result_less로 정렬 방향을 선택한다.
+   true이면 낮은 우선순위가 먼저인 비교,
+   false이면 높은 우선순위가 먼저인 비교를 수행한다. */
 bool
 thread_priority_comp (const struct list_elem *a_, const struct list_elem *b_, void *result_less){
   ASSERT(result_less);

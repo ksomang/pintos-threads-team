@@ -69,6 +69,9 @@ sema_down (struct semaphore *sema) {
 
 	old_level = intr_disable ();
 	while (sema->value == 0) {
+    /* 다른 semaphore에서 block된 상태로 donation을 받는 경우, 
+      lock 대기와 semaphore 대기를
+      혼동하지 않도록 실제 blocking 경로를 sema_down()에서 관리 */
     struct thread *t = thread_current();
     struct lock *lock = t->waiting_lock;
     if (lock && &lock->semaphore == sema) 
@@ -126,6 +129,9 @@ sema_up (struct semaphore *sema) {
     list_remove(&max->elem);
     thread_unblock(max);
 
+    /* FIFO 순서가 아니라 가장 높은 우선순위의 waiter를 깨운다.
+      thread_unblock()만으로는 현재 스레드가 자동으로 양보되지 않으므로,
+      깨운 스레드의 우선순위가 더 높으면 즉시 선점한다. */
     if (max->priority > thread_current()->priority){
       if (intr_context()) intr_yield_on_return();
       else thread_yield();
@@ -208,7 +214,6 @@ lock_acquire (struct lock *lock) {
 	ASSERT (!lock_held_by_current_thread (lock));
 
   enum intr_level old_level;
-
   old_level = intr_disable();
   thread_current ()->waiting_lock = lock;
 
