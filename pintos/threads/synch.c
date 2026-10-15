@@ -221,7 +221,7 @@ lock_acquire (struct lock *lock) {
   thread_current ()->waiting_lock = NULL;
 
   lock->holder = thread_current ();
-  list_push_back(&thread_current()->aquired_locks, &lock->elem);
+  list_push_back(&thread_current()->acquired_locks, &lock->elem);
   intr_set_level(old_level);
 }
 
@@ -244,7 +244,7 @@ lock_try_acquire (struct lock *lock) {
 	success = sema_try_down (&lock->semaphore);
 	if (success){
     lock->holder = thread_current ();
-    list_push_back(&thread_current()->aquired_locks, &lock->elem);
+    list_push_back(&thread_current()->acquired_locks, &lock->elem);
   }
 
 	intr_set_level(old_level);

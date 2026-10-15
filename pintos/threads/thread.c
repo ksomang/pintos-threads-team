@@ -564,7 +564,7 @@ init_thread (struct thread *t, const char *name, int priority) {
   t->priority = priority;
   t->base_priority = priority;
   t->waiting_lock = NULL;
-  list_init(&t->aquired_locks);
+  list_init(&t->acquired_locks);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -753,11 +753,11 @@ allocate_tid (void) {
 static int
 get_max_donation(void){
   struct thread *t = thread_current();
-  struct list_elem *cur = list_begin(&t->aquired_locks);
+  struct list_elem *cur = list_begin(&t->acquired_locks);
   int ret = t->base_priority;
 
   bool result_less = true;
-  while(cur != list_end(&t->aquired_locks)){
+  while(cur != list_end(&t->acquired_locks)){
     struct lock *lock = list_entry(cur, struct lock, elem);
 
     if (!list_empty(&lock->semaphore.waiters)){

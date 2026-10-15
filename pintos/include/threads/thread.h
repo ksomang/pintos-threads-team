@@ -97,7 +97,7 @@ struct thread {
 
   /* lock info */
   struct lock *waiting_lock;
-  struct list aquired_locks;
+  struct list acquired_locks;
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
