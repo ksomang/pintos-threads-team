@@ -7,7 +7,7 @@
   "editor.quickSuggestions": { "other": false, "comments": false, "strings": false },
   "editor.suggestOnTriggerCharacters": false,
   "editor.inlineSuggest.enabled": false,
-  "chat.disableAIFeatures": true,
+  "chat.disableAIFeatures": false,
 
   "files.eol": "\n",
   "files.trimTrailingWhitespace": false
